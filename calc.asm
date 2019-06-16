@@ -219,10 +219,13 @@ Start::
 	call ResetList		;setup the variables in RAM for storing the list of button inputs
 	call LoadMap		;put the background in place
 	
+	ld hl,g_highlightPosition ;initialize the highlight position
+	ld [hl],0
+	
 	ld hl,_OAMRAM+2 ;load the highlight tile index to the sprite tile selector
 	ld [hl],HIGHLIGHT_TILE
 	ld hl,_OAMRAM+3 ; load the sprite flags to all 0s
-	ld [hl],0
+	ld [hl],255
 	
 	call UpdateSprite
 
@@ -289,7 +292,7 @@ ResetList::
 LoadTiles::
 	ld	hl,TileLabel
 	ld	de,_VRAM
-	ld	bc,41*16	;we have 41 tiles and each tile takes 16 bytes
+	ld	bc,(HIGHLIGHT_TILE+1)*16	;we have 42 tiles and each tile takes 16 bytes
 LoadTiles_loop::
 	ld	a,[hl+]	;get a byte from our tiles, and increment.
 	ld	[de],a	;put that byte in VRAM and
@@ -330,15 +333,25 @@ UpdateSprite::
 	ld b,a ;save a copy of the position to b
 	;Set a to the y position (the bottom nibble) and load it into sprite memory
 	ld c,$0f
-	or c
+	and c
+	ld d,4
+	add a,d
+	rla
+	rla
+	rla
 	ld hl,g_spriteY
 	ld [hl],a
 	
 	;Set a to the x position (the top nibble) and load it into sprite memory
 	ld a,b ;recall a to the original value of the position
 	swap a ;grab the other nibble
-	or c
+	and c
+	ld d,9
 	ld hl,g_spriteX ;Setup a single sprite as a highlight
+	add a,d
+	rla
+	rla
+	rla
 	ld [hl],a
 	ret
 
@@ -559,8 +572,8 @@ DB $00,$00,$00,$00,$00,$00,$3C,$3C
 DB $00,$00,$00,$00,$00,$00,$00,$00
 DB $00,$00,$00,$00,$3C,$3C,$00,$00
 DB $3C,$3C,$00,$00,$00,$00,$00,$00
-DB $FF,$00,$81,$00,$81,$00,$81,$00
-DB $81,$00,$81,$00,$81,$00,$FF,$00
+DB $FF,$FF,$81,$81,$81,$81,$81,$81
+DB $81,$81,$81,$81,$81,$81,$FF,$FF
 
 
 ;************************************************************
