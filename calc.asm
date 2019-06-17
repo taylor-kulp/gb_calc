@@ -390,10 +390,50 @@ UpdateCalcList::
 	ld [hl],a ;write the tile number into the position on the screen
 	ret
 	
-
+;Trivial multiplier, computing register a * b
+Multiply::
+	dec b
+	jr z,Multiply_end
+	add a
+	jr Multiply
+Multiply_end::
+	ret
+	
+;Euclidian divider, computing a / b (leaving remainder in b)
+Divide::
+	ld c,0 ;use c to count number of successful divides
+Divide_loop::
+	sub b
+	jr c,Divide_end
+	jr Divide_loop
+Divide_end::
+	ld a,c
+	ret
+	
+;Go through the list, grab every
+ComputeCalcList::
+	call ClearStack ;wipe the screen
+	ret
+	
+;Wipe all numbers currently written
+ClearStack::	
+	ld a,[g_endOfList] ;get the length of the list
+	ld b,0
+	cp b 
+	jr z,ClearStack_end ;if list was empty, then end early
+	ld b,a ;make b a decrementer for the count here
+	ld hl,_SCRN0+CALC_ROW0
+	ld a,BLANK_TILE
+ClearStack_loop::
+	ld [hl+],a ;blank the position 
+	dec b
+	jr nz,ClearStack_loop
+ClearStack_end::
+	ld a,0
+	ld [g_endOfList],a ;reset the list length
+	ret
 
 	
-
 AFTER_BUTTON::
 	ld a,10 ;give a brief pause for the button to depress
 	ld [g_buttonDepressTimer], a
@@ -439,7 +479,7 @@ SET_A::
 	jr AFTER_BUTTON
 	
 SET_B::
-	;call ComputeCalcList
+	call ComputeCalcList
 	jr AFTER_BUTTON
 
 SET_START::
