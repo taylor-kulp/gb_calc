@@ -328,15 +328,15 @@ LoadMap_LOOP::
 
 ;Based on the location specified in the g_highlightPosition, position the highlight sprite
 UpdateSprite::
-	;Now using the 
+	;Now using the highlight position on the grid, set the sprites correctly
 	ld a,[g_highlightPosition]
 	ld b,a ;save a copy of the position to b
 	;Set a to the y position (the bottom nibble) and load it into sprite memory
 	ld c,$0f
 	and c
-	ld d,4
+	ld d,4 ;Offest is from the position of 4 (start of top of grid)
 	add a,d
-	rla
+	rla ;Shift left by 3 because of the length of a sprite
 	rla
 	rla
 	ld hl,g_spriteY
@@ -368,10 +368,12 @@ SET_DOWN::
 	jr AFTER_BUTTON
 
 SET_UP::
-	ld a,[g_spriteY]
-	dec a
-	ld [g_spriteY],a
-	;ld a,UP_TILE
+	;decrement the y position
+	ld a,[g_highlightPosition]
+	dec a ; substract 1
+	ld b,3
+	and b
+	ld [g_highlightPosition],a
 	jr AFTER_BUTTON
 
 SET_LEFT::
