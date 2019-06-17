@@ -38,10 +38,11 @@ BOTTOM_OF_STACK	equ _RAM + 10 ; constant where the list started for reading it o
 
 REFRESH_TIMEOUT	equ 10 ;10 cycles to let the button settle
 
+CALC_ROW0	equ $28 ;2nd row, so 2 * 32 + 8
 CALC_ROW1	equ $48 ;3rd row, so 2 * 32 + 8
-CALC_ROW2	equ $68 ;3rd row, so 4 * 32 + 8
-CALC_ROW3	equ $88 ;3rd row, so 6 * 32 + 8
-CALC_ROW4	equ $A8 ;3rd row, so 8 * 32 + 8
+CALC_ROW2	equ $68 ;4th row, so 4 * 32 + 8
+CALC_ROW3	equ $88 ;5th row, so 6 * 32 + 8
+CALC_ROW4	equ $A8 ;6th row, so 8 * 32 + 8
 
 ;Define the tiles
 BLANK_TILE	equ 0
@@ -234,7 +235,7 @@ Start::
 	ld hl,_OAMRAM+3 ; load the sprite flags to all 0s
 	ld [hl],255
 	
-	call UpdateSprite
+	call UpdateCursor
 
 	ld	a,%11100100	;load a normal palette up 11 10 01 00 - dark->light
 	ldh	[rBGP],a	;load the palette
@@ -334,7 +335,7 @@ LoadMap_LOOP::
 	ret			;done
 
 ;Based on the location specified in the highlight positions, move the highlight sprite
-UpdateSprite::
+UpdateCursor::
 	;Now using the highlight position on the grid, set the sprites correctly
 	ld a,[g_yHighlightPosition]
 	ld d,4 ;Offest is from the position of 4 (start of top of grid)
@@ -353,11 +354,50 @@ UpdateSprite::
 	ld [g_spriteX],a
 
 	ret ;done
+	
+UpdateCalcList::
+	ld a,[g_xHighlightPosition] ;figure out which op is highlighted
+	ld b,a ; save x position in b
+	ld a,[g_yHighlightPosition] ;put y position in a
+	rla 
+	rla ;;multiply by 4
+	add b ;add b in as the lower bits
+	ld d,a ; store this tile index in d
+	
+	ld a,[g_endOfList] ;get the length of the list
+	ld b,0
+	ld c,a ;Put a into bc to add the offset to the hl
+	ld hl,BOTTOM_OF_STACK
+	add hl,bc ;increment hl to the end of list
+	ld a,d ;write the stored tile index 
+	ld [hl],a
+	
+	;Now draw that tile
+	ld hl,CalcTileMap;Look up the operation in the calc tiles map
+	ld b,0 ;setup the bc register with value in a
+	ld c,a
+	add hl,bc ;add the offset to get the tile address in hl
+	ld a,[hl]
+	ld e,a ;save the tile number off in e
+	
+	ld hl,_SCRN0+CALC_ROW0
+	ld a,[g_endOfList] ;get the length of the list
+	ld c,a
+	add hl,bc ;add that list offset from the start of the row
+	inc a
+	ld [g_endOfList],a ;increment the end of the list
+	ld a,e ;recall into a the tile number
+	ld [hl],a ;write the tile number into the position on the screen
+	ret
+	
+
+
+	
 
 AFTER_BUTTON::
 	ld a,10 ;give a brief pause for the button to depress
 	ld [g_buttonDepressTimer], a
-	call UpdateSprite ;redraw
+	call UpdateCursor ;redraw the sprite showing the selection
 	ret ;we were jumped to, so we are calling out
 
 SET_DOWN::
@@ -395,11 +435,11 @@ SET_RIGHT::
 	ld [g_xHighlightPosition],a
 	jr AFTER_BUTTON
 SET_A::
-	;ld a,A_TILE
+	call UpdateCalcList ;redraw the background where the work is shown
 	jr AFTER_BUTTON
 	
 SET_B::
-	;ld a,B_TILE
+	;call ComputeCalcList
 	jr AFTER_BUTTON
 
 SET_START::
