@@ -21,9 +21,11 @@ g_spriteX	equ _OAMRAM + 1 ; X position in byte 1
 g_spriteY	equ _OAMRAM + 0 ; Y position in byte 0
 
 ;Defining offsets into RAM that will be global variables for the game
-g_highlightPosition	equ _RAM + 0 ; 1 byte, store which button is currently highlighted.  First nibble is x, second is y
-g_refreshCounter	EQU _RAM + 1 ; 1 byte, stores the number of refreshes since the last update
-g_buttonBits		EQU _RAM + 2 ; 1 byte, store the contents of the bit registers for the directional pad and buttons
+;Use two bytes to store the highlight postion.  Could use a single byte with nibbles, but add a lot of masing instructions
+g_xHighlightPosition	equ _RAM + 0 ; 1 byte, store the x value on the grid
+g_yHighlightPosition	equ _RAM + 1 ; 1 byte, store the y value on the grid
+g_buttonDepressTimer	EQU _RAM + 2 ; 1 byte, stores the number of refreshes since the last update
+g_buttonBits		EQU _RAM + 3 ; 1 byte, store the contents of the bit registers for the directional pad and buttons
 
 ;At 10 onwards in RAM, keep a stack.  At 9, save off the pointer to the stack location
 g_endOfList	equ _RAM + 9 ; variable we increment each time we add to the list
@@ -33,6 +35,8 @@ BOTTOM_OF_STACK	equ _RAM + 10 ; constant where the list started for reading it o
 ;****************************************************************************************************************************************************
 ;*	equates
 ;****************************************************************************************************************************************************
+
+REFRESH_TIMEOUT	equ 10 ;10 cycles to let the button settle
 
 CALC_ROW1	equ $48 ;3rd row, so 2 * 32 + 8
 CALC_ROW2	equ $68 ;3rd row, so 4 * 32 + 8
@@ -219,8 +223,11 @@ Start::
 	call ResetList		;setup the variables in RAM for storing the list of button inputs
 	call LoadMap		;put the background in place
 	
-	ld hl,g_highlightPosition ;initialize the highlight position
-	ld [hl],0
+	ld a,0 ;initialize the highlight positions
+	ld [g_xHighlightPosition],a
+	ld [g_yHighlightPosition],a
+	ld a,REFRESH_TIMEOUT ;initialize the button timeout
+	ld [g_buttonDepressTimer],a
 	
 	ld hl,_OAMRAM+2 ;load the highlight tile index to the sprite tile selector
 	ld [hl],HIGHLIGHT_TILE
@@ -326,70 +333,67 @@ LoadMap_LOOP::
 	jr	nz,LoadMap_LOOP	;and of the counter != 0 then loop
 	ret			;done
 
-;Based on the location specified in the g_highlightPosition, position the highlight sprite
+;Based on the location specified in the highlight positions, move the highlight sprite
 UpdateSprite::
 	;Now using the highlight position on the grid, set the sprites correctly
-	ld a,[g_highlightPosition]
-	ld b,a ;save a copy of the position to b
-	;Set a to the y position (the bottom nibble) and load it into sprite memory
-	ld c,$0f
-	and c
+	ld a,[g_yHighlightPosition]
 	ld d,4 ;Offest is from the position of 4 (start of top of grid)
 	add a,d
 	rla ;Shift left by 3 because of the length of a sprite
 	rla
 	rla
-	ld hl,g_spriteY
-	ld [hl],a
+	ld [g_spriteY],a
 	
-	;Set a to the x position (the top nibble) and load it into sprite memory
-	ld a,b ;recall a to the original value of the position
-	swap a ;grab the other nibble
-	and c
-	ld d,9
-	ld hl,g_spriteX ;Setup a single sprite as a highlight
+	ld a,[g_xHighlightPosition]
+	ld d,9 ;Offest is from the position of 9 (start from the side of the screen)
 	add a,d
+	rla ;Shift left by 3 because of the length of a sprite
 	rla
 	rla
-	rla
-	ld [hl],a
-	ret
+	ld [g_spriteX],a
+
+	ret ;done
 
 AFTER_BUTTON::
-	;ld [g_lastButtonPressed], a ;we expect a to have been populated with the right tile
+	ld a,10 ;give a brief pause for the button to depress
+	ld [g_buttonDepressTimer], a
 	call UpdateSprite ;redraw
 	ret ;we were jumped to, so we are calling out
 
 SET_DOWN::
-	ld a,[g_spriteY]
-	inc a
-	ld [g_spriteY],a
-	;ld a,DOWN_TILE
+	;increment the y position
+	ld a,[g_yHighlightPosition]
+	inc a ; add 1
+	ld b, $3
+	and b ;mod by 4
+	ld [g_yHighlightPosition],a
 	jr AFTER_BUTTON
-
 SET_UP::
 	;decrement the y position
-	ld a,[g_highlightPosition]
+	ld a,[g_yHighlightPosition]
 	dec a ; substract 1
-	ld b,3
-	and b
-	ld [g_highlightPosition],a
+	ld b, $3
+	and b ;mod by 4
+	ld [g_yHighlightPosition],a
 	jr AFTER_BUTTON
 
 SET_LEFT::
-	ld a,[g_spriteX]
-	dec a
-	ld [g_spriteX],a
-	;ld a,LEFT_TILE
+	;decrement the x position
+	ld a,[g_xHighlightPosition]
+	dec a ; substract 1
+	ld b, $3
+	and b ;mod by 4
+	ld [g_xHighlightPosition],a
 	jr AFTER_BUTTON
 
 SET_RIGHT::
-	ld a,[g_spriteX]
-	inc a
-	ld [g_spriteX],a
-	;ld a,RIGHT_TILE
+	;increment the x position
+	ld a,[g_xHighlightPosition]
+	inc a ; add 1
+	ld b, $3
+	and b ;mod by 4
+	ld [g_xHighlightPosition],a
 	jr AFTER_BUTTON
-
 SET_A::
 	;ld a,A_TILE
 	jr AFTER_BUTTON
@@ -405,8 +409,17 @@ SET_START::
 SET_SELECT::
 	;ld a,SELECT_TILE
 	jr AFTER_BUTTON
+
+;Label called 
+OnVBlank_pauseForRefresh::
+	ld [g_buttonDepressTimer],a ;write out the decremented value, stepping towards keeping it at 1
+	ret ;let the procedure exit out
 	
 ON_VBLANK::
+	ld a,[g_buttonDepressTimer] ;Check if someone just pressed a button
+	dec a ;step towards 0
+	jr nz,OnVBlank_pauseForRefresh
+	;else keep going, we aren't a pause state
 	call READ_INPUTS ;set the button inputs
 	ld a,[g_buttonBits] ;get the button bits
 	ld b,a ;save them off
@@ -436,23 +449,6 @@ ON_VBLANK::
 	
 	;If we never jumped, just return out and leave things as they are
 	ret
-;	ld a,[g_refreshCounter] ;get the current refresh value counter
-;	inc a ; increase the value of a
-;	cp 32 
-;	jr z,VBLANK_OVERFLOW 
-;	ld [g_refreshCounter],a
-;	ret
-;VBLANK_OVERFLOW::
-;	;Every 32nd time this procedure is called, update the button sprite
-;	ld a,[g_lastButtonPressed]
-;	inc a
-;	ld b,$07 ;Grab the last couple of bits to cycle through
-;	and b
-;	ld [g_lastButtonPressed],a ;Set the value back into memory
-;	call UpdateSprite ;redraw
-;	ld a,0
-;	ld [g_refreshCounter],a ;reset the counter
-;	ret
 	
 READ_INPUTS::
 	ld a,P1F_5 ;ready the mask for P15
