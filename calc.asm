@@ -25,7 +25,11 @@ g_spriteY	equ _OAMRAM + 0 ; Y position in byte 0
 g_xHighlightPosition	equ _RAM + 0 ; 1 byte, store the x value on the grid
 g_yHighlightPosition	equ _RAM + 1 ; 1 byte, store the y value on the grid
 g_buttonDepressTimer	EQU _RAM + 2 ; 1 byte, stores the number of refreshes since the last update
-g_buttonBits		EQU _RAM + 3 ; 1 byte, store the contents of the bit registers for the directional pad and buttons
+g_buttonBits			EQU _RAM + 3 ; 1 byte, store the contents of the bit registers for the directional pad and buttons
+g_firstNumber			EQU _RAM + 4 ; 1 byte, stores the first entered number
+g_operator				EQU _RAM + 5 ; 1 byte, stores which operator was selected
+g_secondNumber			EQU _RAM + 6 ; 1 byte, stores the second entered number
+g_result				EQU _RAM + 7 ; 1 byte, stores the result of the calculation
 
 ;At 10 onwards in RAM, keep a stack.  At 9, save off the pointer to the stack location
 g_endOfList	equ _RAM + 9 ; variable we increment each time we add to the list
@@ -403,9 +407,10 @@ Multiply_end::
 Divide::
 	ld c,0 ;use c to count number of successful divides
 Divide_loop::
-	sub b
+	cp b ;check if b > a
 	jr c,Divide_end
-	inc c ;If it didn't carry, the increment C
+	inc c ;If it didn't carry, then increment C
+	sub b ;a = a - b to step towards loop end 
 	jr Divide_loop
 Divide_end::
 	ld b,a ;put the remainder in 
@@ -414,6 +419,7 @@ Divide_end::
 	
 ;Takes a value in a and writes it screen as decimal
 DisplayValue::
+	ld a,[g_result]
 	ld b,10 
 	call Divide ;divide by 10, print remainder
 	ld c,a ;save a copy of the quotient 
@@ -425,12 +431,68 @@ DisplayValue::
 	ld b,10
 	ld a,c ; recall the quotient into a
 	cp d
-	jr z,DisplayValue
+	jr nz,DisplayValue
 	ret
+
+;Parse out a number from a position in the stack and store it to e
+;Inputs - hl is pointing at the first digit.  It will be incremented
+;to the next, non-digit character
+ParseNumber::
+	ld e,0 ;reset e
+ParseNumber_loop
+	ld a,[hl] ;load a with the digit at hl
+	push hl ;store the address temporarily
+	ld hl,CalcTileMap ;translate back from the symbol
+	ld b,0
+	ld c,a
+	add hl,bc ;offset by the index
+	ld a,[hl] ;save the content of that address
+	sub ZERO_TILE ; substract the tile offset
+	pop hl ;set the address back
+	cp 10 ;if the number is greater than 9, terminate
+	jr nc,ParseNumber_End
+	ld c,a ;save off the current digit
+	ld a,e ;pull in the current number
+	ld b,10 ;setup b with base 10 for the multiply
+	call Multiply ; shift up the old number by 10
+	add c ; add the stored off current digit
+	ld e,a ;save off to d
+	inc hl
+	jr ParseNumber_loop
+ParseNumber_End::
+	ret
+
+ComputeCalcList_DoDivide::
+	ld a,[g_secondNumber]
+	ld b,a
+	ld a,[g_firstNumber]
+	call Divide 
+	ld a,c
+	ld [g_result],a
+	jp ComputeCalcList_end
 	
 ;Go through the list, grab every
 ComputeCalcList::
+	;Grab the first number
+	ld hl,BOTTOM_OF_STACK
+	call ParseNumber
+	ld a,e
+	ld [g_firstNumber],a
+	;Get the operator (remembering hl is pointing at it)
+	ld a,[hl+]
+	ld [g_operator],a
+	;Grab the second number
+	call ParseNumber ;second number is now in e
+	ld a,e
+	ld [g_secondNumber],a
+	;Apply the operator
+	ld a,[g_operator]
+	sub DIVIDE_TILE ; subtract off the divide tile
+	;TODO: Pick the right operator
+	jr ComputeCalcList_DoDivide
+ComputeCalcList_end::
 	call ClearStack ;wipe the screen
+	call DisplayValue
 	ret
 	
 ;Wipe all numbers currently written
