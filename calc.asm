@@ -395,11 +395,14 @@ UpdateCalcList::
 	ret
 	
 ;Trivial multiplier, computing register a * b
+;Trashes registers "a" and "c"
 Multiply::
+	ld c,a
+Multiply_loop::
 	dec b
 	jr z,Multiply_end
-	add a
-	jr Multiply
+	add c
+	jr Multiply_loop
 Multiply_end::
 	ret
 	
@@ -419,19 +422,20 @@ Divide_end::
 	
 ;Takes a value in a and writes it screen as decimal
 DisplayValue::
-	ld a,[g_result]
+	ld hl,_SCRN0+CALC_ROW0 ;point hl to where we need to write characters
+	ld a,[g_result];initialize a with value to print
+DisplayValue_loop::
 	ld b,10 
 	call Divide ;divide by 10, print remainder
 	ld c,a ;save a copy of the quotient 
 	ld a,ZERO_TILE ;Get the tile offset into the numbers
-	add b ;Add the remainder to get the first digit
-	ld hl,_SCRN0+CALC_ROW0 
+	add b ;Add the remainder to get the leading digit
 	ld [hl+],a ;load tile index into the screen 
 	ld d,0 ; 
 	ld b,10
 	ld a,c ; recall the quotient into a
 	cp d
-	jr nz,DisplayValue
+	jr nz,DisplayValue_loop ;if there was remainder, repeat with this value
 	ret
 
 ;Parse out a number from a position in the stack and store it to e
@@ -444,19 +448,19 @@ ParseNumber_loop
 	push hl ;store the address temporarily
 	ld hl,CalcTileMap ;translate back from the symbol
 	ld b,0
-	ld c,a
+	ld c,a ;save the digit off in bc
 	add hl,bc ;offset by the index
 	ld a,[hl] ;save the content of that address
 	sub ZERO_TILE ; substract the tile offset
 	pop hl ;set the address back
 	cp 10 ;if the number is greater than 9, terminate
 	jr nc,ParseNumber_End
-	ld c,a ;save off the current digit
+	ld d,a ;save off the current digit
 	ld a,e ;pull in the current number
 	ld b,10 ;setup b with base 10 for the multiply
 	call Multiply ; shift up the old number by 10
-	add c ; add the stored off current digit
-	ld e,a ;save off to d
+	add d ; add the stored off current digit
+	ld e,a ;save off to e
 	inc hl
 	jr ParseNumber_loop
 ParseNumber_End::
